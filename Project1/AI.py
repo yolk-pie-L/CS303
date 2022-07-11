@@ -1,3 +1,4 @@
+import numba
 import numpy as np
 import random
 import time
@@ -21,10 +22,9 @@ para1 = np.array([
     [4000, -18, 6, 4, 4, 6, -18, 4000]
 ])
 
-directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+chessboard_size = 8
 
-
-def eval(chessboard, color):
+def evaluate(chessboard, color):
     idx1 = np.where(chessboard == color)  # 自己
     idx2 = np.where(chessboard == -color)  # 对手
     res = para1[idx1].sum() - para1[idx2].sum()  # 自己减对手的差
@@ -46,25 +46,77 @@ class AI(object):
     # The input is current chessboard.
     def go(self, chessboard):
         self.candidate_list.clear()
+        # start = time.time()
         self.chessboard = chessboard
-        self.candidate_list = self.generateCandidate(chessboard, self.color)
+        self.candidate_list = generateCandidate(chessboard, self.color)
         move = self.absearch()
         if move:
             self.candidate_list.append(move)
+        # end = time.time()
+        # print(end - start)
+
+    def presearch(self):
+        alpha = -infinity
+        beta = infinity
+        level = 4
+        child_list = []
+        for action in self.candidate_list:
+            update_i, update_j = self.place(self.chessboard, action, self.color)
+            _, utility = self.maximize(self.chessboard, alpha, beta, level - 1)
+            self.undo_place(update_i, update_j, action, self.chessboard, self.color)
+            child_list.append((utility, action))
+        return child_list
 
     def absearch(self):
         alpha = -infinity
         beta = infinity
-        level = 4
+        stage = np.count_nonzero(self.chessboard)
+        # level = 4
+        if stage < 20:
+            level = 2 # 6
+            move, _ = self.minimize(self.chessboard, alpha, beta, level)
+        elif stage < 50 and len(self.candidate_list) > 5:
+            level = 4
+            # move, _ = self.minimize(self.chessboard, alpha, beta, level)
+            child_list = self.presearch()
+            move, _ = self.appro_absearch(child_list)
+        else:
+            level = 2 # 8
+            move, _ = self.minimize(self.chessboard, alpha, beta, level)
+        # elif stage <= 36:
+        #     level = 7
+        # elif stage <= 52:
+        #     level = 8
+        # else:
+        #     level = 10
         move, _ = self.minimize(self.chessboard, alpha, beta, level)
         return move
 
+    def appro_absearch(self, child_list):
+        child_list.sort()
+        alpha = -infinity
+        beta = infinity
+        minChild = None
+        minUtility = infinity
+        level = 6
+        for i in range(0, 3): #只搜前三个
+            update_i, update_j = self.place(self.chessboard, child_list[i][1], self.color)
+            _, utility = self.maximize(self.chessboard, alpha, beta, level - 1)
+            self.undo_place(update_i, update_j, child_list[i][1], self.chessboard, self.color)
+            if utility < minUtility:
+                minChild = child_list[i][1]
+                minUtility = utility
+            if minUtility <= alpha:
+                break
+            beta = min(minUtility, beta)
+        return minChild, minUtility
+
     def maximize(self, chessboard, alpha, beta, level):
         if level == 0:
-            return None, eval(chessboard, self.color)
+            return None, evaluate(chessboard, self.color)
         maxChild = None
         maxUtility = -infinity
-        children = self.generateCandidate(chessboard, -self.color)
+        children = generateCandidate(chessboard, -self.color)
         for child in children:
             update_i, update_j = self.place(chessboard, child, -self.color)
             _, utility = self.minimize(chessboard, alpha, beta, level - 1)
@@ -82,10 +134,10 @@ class AI(object):
 
     def minimize(self, chessboard, alpha, beta, level):
         if level == 0:
-            return None, eval(chessboard, self.color)
+            return None, evaluate(chessboard, self.color)
         minChild = None
         minUtility = infinity
-        children = self.generateCandidate(chessboard, self.color)
+        children = generateCandidate(chessboard, self.color)
         for child in children:
             update_i, update_j = self.place(chessboard, child, self.color)
             _, utility = self.maximize(chessboard, alpha, beta, level - 1)
@@ -101,53 +153,29 @@ class AI(object):
             return None, utility
         return minChild, minUtility
 
-    # generate candidate list
-    def generateCandidate(self, chessboard, color):
-        candidate_list = []
-        idx = np.where(chessboard == COLOR_NONE)
-        idx = list(zip(idx[0], idx[1]))
-        for position in idx:
-            i = position[0]
-            j = position[1]
-            for direction in directions:
-                i_tempt = i
-                j_tempt = j
-                moved = False
-                while 0 <= i_tempt + direction[0] < self.chessboard_size and \
-                        0 <= j_tempt + direction[1] < self.chessboard_size and \
-                        chessboard[i_tempt + direction[0]][j_tempt + direction[1]] == -color:
-                    i_tempt = i_tempt + direction[0]
-                    j_tempt = j_tempt + direction[1]
-                    moved = True
-                if moved and 0 <= i_tempt + direction[0] < self.chessboard_size and \
-                        0 <= j_tempt + direction[1] < self.chessboard_size and \
-                        chessboard[i_tempt + direction[0]][j_tempt + direction[1]] == color:
-                    candidate_list.append((i, j))
-                    break
-        return candidate_list
-
     def place(self, chessboard, move, color):
         i_arr = []
         j_arr = []
+        directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
         for direction in directions:
             i_tempt = move[0]
             j_tempt = move[1]
             moved = False
             i_tempt_arr = []
             j_tempt_arr = []
-            while 0 <= i_tempt + direction[0] < self.chessboard_size and \
-                    0 <= j_tempt + direction[1] < self.chessboard_size and \
+            while 0 <= i_tempt + direction[0] < chessboard_size and \
+                    0 <= j_tempt + direction[1] < chessboard_size and \
                     chessboard[i_tempt + direction[0]][j_tempt + direction[1]] == -color:
                 i_tempt = i_tempt + direction[0]
                 j_tempt = j_tempt + direction[1]
                 moved = True
                 i_tempt_arr.append(i_tempt)
                 j_tempt_arr.append(j_tempt)
-            if moved and 0 <= i_tempt + direction[0] < self.chessboard_size and \
-                    0 <= j_tempt + direction[1] < self.chessboard_size and \
+            if moved and 0 <= i_tempt + direction[0] < chessboard_size and \
+                    0 <= j_tempt + direction[1] < chessboard_size and \
                     chessboard[i_tempt + direction[0]][j_tempt + direction[1]] == color:
-                i_arr = i_arr + i_tempt_arr
-                j_arr = j_arr + j_tempt_arr
+                i_arr.extend(i_tempt_arr)
+                j_arr.extend(j_tempt_arr)
         chessboard[(i_arr,j_arr)] = color
         chessboard[move] = color
         return i_arr, j_arr
@@ -157,23 +185,39 @@ class AI(object):
         chessboard[move[0]][move[1]] = COLOR_NONE
 
 
-# ==============Find new pos========================================
-# Make sure that the position of your decision in chess board is empty.
-# If not, the system will return error.
-# Add your decision into candidate_list, Records the chess board
-# You need add all the positions which is valid
-# candidate_list example: [(3,3),(4,4)]
-# You need append your decision at the end of the candidate_list,
-# we will pickthe last element of the candidate_list as the position you choose
-# If there is no valid position, you must return an empty list.
+# generate candidate
+@numba.njit(cache=True)
+def generateCandidate(chessboard: np.ndarray, color: int):
+    directions = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+    candidate_list = []
+    idx = np.where(chessboard == COLOR_NONE)
+    idx = list(zip(idx[0], idx[1]))
+    for position in idx:
+        i = position[0]
+        j = position[1]
+        for direction in directions:
+            i_tempt = i
+            j_tempt = j
+            moved = False
+            while 0 <= i_tempt + direction[0] < chessboard_size and \
+                    0 <= j_tempt + direction[1] < chessboard_size and \
+                    chessboard[i_tempt + direction[0]][j_tempt + direction[1]] == -color:
+                i_tempt = i_tempt + direction[0]
+                j_tempt = j_tempt + direction[1]
+                moved = True
+            if moved and 0 <= i_tempt + direction[0] < chessboard_size and \
+                    0 <= j_tempt + direction[1] < chessboard_size and \
+                    chessboard[i_tempt + direction[0]][j_tempt + direction[1]] == color:
+                candidate_list.append((i, j))
+                break
+    return candidate_list
 
-ai = AI(8, -1, 5)
 
-chessborad = np.array([
-    [0, -1, -1, -1, -1, -1, -1, 0], [0, 1, 1, -1, 1, 1, 1, -1], [0, 0, 1, -1, -1, 1, 1, -1], [0, 1, 1, 1, 1, 1, 1, -1],
-    [0, 0, 1, -1, 1, 1, 0, 0], [0, 0, 0, 1, 1, 1, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]])
-
-# k = list(zip(idx[0], idx[1]))
-# print(k)
-ai.go(chessborad)
+ai = AI(8, COLOR_BLACK, 5)
+fp = open("chess_log_4.txt")
+a = fp.readline()
+a = eval(a)
+b = a[22]
+b = np.array(b)
+ai.go(b)
 print(ai.candidate_list)
