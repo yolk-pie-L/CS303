@@ -1,3 +1,8 @@
+"""
+this version is used for test presearch and time out. use presearch to help avoid timeout and add
+a candidate according to level four presearch
+"""
+
 import numba
 import numpy as np
 import random
@@ -5,6 +10,8 @@ import time
 import math
 
 infinity = math.inf
+
+BRANCH_FACTOR = 5
 
 COLOR_BLACK = -1
 COLOR_WHITE = 1
@@ -65,41 +72,40 @@ class AI(object):
             _, utility = self.maximize(self.chessboard, alpha, beta, level - 1)
             self.undo_place(update_i, update_j, action, self.chessboard, self.color)
             child_list.append((utility, action))
+        child_list.sort()
         return child_list
 
     def absearch(self):
         alpha = -infinity
         beta = infinity
         stage = np.count_nonzero(self.chessboard)
-        # level = 4
-        if stage < 20:
-            level = 2 # 6
+        start = time.time()
+        child_list = self.presearch()
+        end = time.time()
+        presearch_time = end - start
+        print(presearch_time)
+        if len(child_list) != 0:
+            self.candidate_list.append(child_list[0][1])
+        if stage < 50:
+            if presearch_time > 0.42:
+                level = 5
+            elif presearch_time < 0.08:
+                level = 7
+            else:
+                level = 6
             move, _ = self.minimize(self.chessboard, alpha, beta, level)
-        elif stage < 50 and len(self.candidate_list) > 5:
-            level = 4
-            # move, _ = self.minimize(self.chessboard, alpha, beta, level)
-            child_list = self.presearch()
-            move, _ = self.appro_absearch(child_list)
         else:
-            level = 2 # 8
+            level = 8
             move, _ = self.minimize(self.chessboard, alpha, beta, level)
-        # elif stage <= 36:
-        #     level = 7
-        # elif stage <= 52:
-        #     level = 8
-        # else:
-        #     level = 10
-        move, _ = self.minimize(self.chessboard, alpha, beta, level)
         return move
 
     def appro_absearch(self, child_list):
-        child_list.sort()
         alpha = -infinity
         beta = infinity
         minChild = None
         minUtility = infinity
         level = 6
-        for i in range(0, 3): #只搜前三个
+        for i in range(0, BRANCH_FACTOR): #只搜前5个
             update_i, update_j = self.place(self.chessboard, child_list[i][1], self.color)
             _, utility = self.maximize(self.chessboard, alpha, beta, level - 1)
             self.undo_place(update_i, update_j, child_list[i][1], self.chessboard, self.color)
@@ -212,12 +218,3 @@ def generateCandidate(chessboard: np.ndarray, color: int):
                 break
     return candidate_list
 
-
-ai = AI(8, COLOR_BLACK, 5)
-fp = open("chess_log_4.txt")
-a = fp.readline()
-a = eval(a)
-b = a[22]
-b = np.array(b)
-ai.go(b)
-print(ai.candidate_list)
