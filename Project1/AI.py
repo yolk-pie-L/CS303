@@ -1,6 +1,6 @@
 """
 this version is used for test presearch and time out. use presearch to help avoid timeout and add
-a candidate according to level four presearch
+a candidate according to level four presearch.
 """
 
 import numba
@@ -29,8 +29,12 @@ class AI(object):
         self.color = color
         self.time_out = time_out
         self.candidate_list = []
-        self.weight_vector = [1, 2, 6.786588683257628, 4, 5.955936082072979, 4, 9, -1.0017544334872417, -9.636565456751537, 50]
-        self.chessboard_weight = assign_weight_array(self.weight_vector, self.chessboard_size)
+        self.black_weight_vector = [1, 2, 6.9802668786964235, 6.955834433152874, 5.955936082072979, 9.176010335696908, 12.358021682016863, 1.0488993643373625, -1.784330415039845, 57.80395980897628]
+        self.white_weight_vector = [1, 3.469257198353225, 9.084906165858914, 5.476656155454725, 5.955936082072979, 9.176010335696908, 11.987009617447153, 1.0488993643373625, -3.744098587161166, 57.80395980897628]
+        if self.color == COLOR_BLACK:
+            self.chessboard_weight = assign_weight_array(self.black_weight_vector, self.chessboard_size)
+        else:
+            self.chessboard_weight = assign_weight_array(self.white_weight_vector, self.chessboard_size)
 
     def from_list(self, arg_list):
         self.weight_vector = arg_list[:10]
@@ -42,14 +46,11 @@ class AI(object):
     # The input is current chessboard.
     def go(self, chessboard):
         self.candidate_list.clear()
-        # start = time.time()
         self.chessboard = chessboard
         self.candidate_list = generateCandidate(chessboard, self.color)
         move = self.absearch()
         if move:
             self.candidate_list.append(move)
-        # end = time.time()
-        # print(end - start)
 
     def presearch(self):
         alpha = -infinity
@@ -62,51 +63,28 @@ class AI(object):
             self.undo_place(update_i, update_j, action, self.chessboard, self.color)
             child_list.append((utility, action))
         child_list.sort()
-        return child_list
+        childlist = []
+        for c in child_list:
+            childlist.append(c[1])
+        return childlist
 
     def absearch(self):
         alpha = -infinity
         beta = infinity
         stage = np.count_nonzero(self.chessboard)
-        # start = time.time()
-        # child_list = self.presearch()
-        # end = time.time()
-        # presearch_time = end - start
-        # # print(presearch_time)
-        # if len(child_list) != 0:
-        #     self.candidate_list.append(child_list[0][1])
-        # if stage < 50:
-        #     if presearch_time > 0.42:
-        #         level = 5
-        #     elif presearch_time < 0.08:
-        #         level = 7
-        #     else:
-        #         level = 6
-        #     move, _ = self.minimize(self.chessboard, alpha, beta, level)
-        # else:
-        #     level = 8
-        #     move, _ = self.minimize(self.chessboard, alpha, beta, level)
-        level = 4
-        move, _ = self.minimize(self.chessboard, alpha, beta, level)
+        start = time.time()
+        child_list = self.presearch()
+        end = time.time()
+        presearch_time = end - start
+        if len(child_list) != 0:
+            self.candidate_list.append(child_list[0])
+        if stage < 50:
+            level = 6
+            move, _ = self.minimize(self.chessboard, alpha, beta, level, child_list)
+        else:
+            level = 8
+            move, _ = self.minimize(self.chessboard, alpha, beta, level, child_list)
         return move
-
-    def appro_absearch(self, child_list):
-        alpha = -infinity
-        beta = infinity
-        minChild = None
-        minUtility = infinity
-        level = 6
-        for i in range(0, BRANCH_FACTOR):  # 只搜前5个
-            update_i, update_j = self.place(self.chessboard, child_list[i][1], self.color)
-            _, utility = self.maximize(self.chessboard, alpha, beta, level - 1)
-            self.undo_place(update_i, update_j, child_list[i][1], self.chessboard, self.color)
-            if utility < minUtility:
-                minChild = child_list[i][1]
-                minUtility = utility
-            if minUtility <= alpha:
-                break
-            beta = min(minUtility, beta)
-        return minChild, minUtility
 
     def maximize(self, chessboard, alpha, beta, level):
         if level == 0:
@@ -129,12 +107,15 @@ class AI(object):
             return None, utility
         return maxChild, maxUtility
 
-    def minimize(self, chessboard, alpha, beta, level):
+    def minimize(self, chessboard, alpha, beta, level, childlist = None):
         if level == 0:
             return None, self.evaluate(chessboard, self.color)
         minChild = None
         minUtility = infinity
-        children = generateCandidate(chessboard, self.color)
+        if childlist:
+            children = childlist
+        else:
+            children = generateCandidate(chessboard, self.color)
         for child in children:
             update_i, update_j = self.place(chessboard, child, self.color)
             _, utility = self.maximize(chessboard, alpha, beta, level - 1)
@@ -232,9 +213,4 @@ def assign_weight_array(v, csize):
     return weight_matrix
 
 
-# print(assign_weight_array([1, 2, 6.786588683257628, 4, 5.955936082072979, 4, 9, -1.0017544334872417, -9.636565456751537, 50], 8))
-# ai = AI(8, 1, 5)
-# print(ai.chessboard_weight)
-# chessborad = np.array([[0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, -1, 0, 0, 0, 0], [0, 0, 0, -1, -1, 0, 0, 0], [0, 0, 1, 1, 1, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]])
-# ai.go(chessborad)
-# print(ai.candidate_list)
+
