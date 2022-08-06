@@ -13,6 +13,9 @@ inf = float('inf')
 # hyper paramters
 ps_iter = 10
 alpha = 3
+psize = 30  # Population size
+ubtrial = 50  # Maximum trials for generating initial solutions
+pls = 0.5  # Probability of carrying out local search (mutation)
 
 
 class CARPsolver():
@@ -184,6 +187,7 @@ class CARPsolver():
     def solve(self):
         self.floyd()
         # sol, dist = self.pathScanning()
+        # self.localSearch(sol)
         # self.formatOutput(sol, dist)
 
         sol = self.EvolutionaryAlgorithm()
@@ -196,11 +200,22 @@ class CARPsolver():
 
     def check(self, sol):
         if sol:
-            count = 0
+            demandList = copy.deepcopy(self.demand_list)
             for R in sol:
-                count += len(R)
-            if count != self.required_edges:
-                raise Exception(print(sol))
+                if self.getRouteDemand(R) > self.vehicle_capacity:
+                    print(sol)
+                    raise Exception("larger than capacity")
+                for task in R:
+                    if task in demandList:
+                        demandList.remove(task)
+                    elif (task[1], task[0]) in demandList:
+                        demandList.remove((task[1], task[0]))
+                    else:
+                        print("sol", sol)
+                        raise Exception("edge not in demandlist")
+            if demandList:
+                print("sol, ", sol)
+                raise Exception("there're edges not served")
 
     def EvolutionaryAlgorithm(self):
         psize = 30  # Population size
@@ -210,6 +225,9 @@ class CARPsolver():
         pop.sort(key=self.getSolCost)
         psize = len(pop)
         opsize = 2 * psize  # No. of offspring generated in each generation, original is 6
+        evolve_rate = 1.5
+        select_rate = 0.3
+        count = 0
         while time.time() - start < termination - 1:
             popt = copy.deepcopy(pop)
             for _ in range(0, opsize, 2):
@@ -218,28 +236,35 @@ class CARPsolver():
                 while father_idx == mother_idx:
                     mother_idx = random.randint(0, psize - 1)
                 son1, son2 = self.SBX(pop[father_idx], pop[mother_idx])
-                self.check(son1)
-                self.check(son2)
+                # count += 1
+                # print(count)
+                # self.check(son1)
+                # self.check(son2)
                 if random.random() < pls:
                     son1 = self.localSearch(son1)
-                    self.check(son1)
+                    # self.check(son1)
                 if random.random() < pls:
                     son2 = self.localSearch(son2)
-                    self.check(son2)
+                    # self.check(son2)
                 if son1 and son1 not in popt:
                     popt.append(son1)
                 if son2 and son2 not in popt:
                     popt.append(son2)
             popt.sort(key = self.getSolCost)
-            pop = popt[0:int(psize/2)]
+            pop = popt[0:int(psize*select_rate)]
             while len(pop) < psize:
-                choice = int(random.random() ** 1.3 * (len(popt) - len(pop))) + len(pop)
+                choice = int(random.random() ** evolve_rate * (len(popt) - len(pop))) + len(pop)
                 if popt[choice] not in pop:
                     pop.append(popt[choice])
         return pop[0]
 
 
     def localSearch(self, son):
+        # new_son = self.singleInsertion(son)
+        # new_son2 = self.doubleInsertion(new_son)
+        # new_son3 = self.swap(new_son2)
+        # new_son4 = self.two_opt1(new_son3)
+        # new_son5 = self.two_opt2(new_son4)
         weight = [0.35, 0.5, 0.7, 0.85]
         choice = random.random()
         if choice < weight[0]:
@@ -322,22 +347,28 @@ class CARPsolver():
         demand1 = self.getRouteDemand(R1)
         demand2 = self.getRouteDemand(R2)
         count = 0
-        while count > len(R1) + len(R2):
+        while count <= len(R1) + len(R2):
+            count += 1
             task1_idx = random.randint(0, len(R1) - 1)
             task2_idx = random.randint(0, len(R2) - 1)
             task1 = R1[task1_idx]
             task2 = R2[task2_idx]
+            if task1 == task2:
+                continue
             task1_demand = self.demand_graph[task1[0]][task1[1]]
             task2_demand = self.demand_graph[task2[0]][task2[1]]
             if demand1 - task1_demand + task2_demand <= self.vehicle_capacity and \
                 demand2 - task2_demand + task1_demand <= self.vehicle_capacity:
-                R1.pop(task1_idx)
-                self.insertEdge(R1, task2)
-                R2.pop(task2_idx)
-                self.insertEdge(R2, task1)
+                R1.remove(task1)
+                self.insertEdge(task2, R1)
+                R2.remove(task2)
+                self.insertEdge(task1, R2)
+                break
                 # TODO: maybe insert to a random place is better
                 # R1 = R1[:task1_idx] + [task2] + R1[task1_idx + 1:]
                 # R2 = R2[:task2_idx] + [task1] + R2[task2_idx + 1:]
+        if count > len(R1) + len(R2):
+            return None
         return new_solution
 
     def two_opt1(self, old_solution):
@@ -576,8 +607,8 @@ class CARPsolver():
 # filepath = sys.argv[1]
 # termination = sys.argv[3]
 # random_seed = sys.argv[5]
-filepath = 'CARP_samples/egl-e1-A.dat'
-termination = 20
+filepath = 'CARP_samples/egl-s1-A.dat'
+termination = 60
 random_seed = 1
 random.seed(random_seed)
 carp_solver = CARPsolver()
